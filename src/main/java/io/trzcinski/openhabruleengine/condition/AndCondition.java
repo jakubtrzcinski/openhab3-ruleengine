@@ -16,8 +16,4 @@ public class AndCondition extends ConditionAggregator {
         super(child);
     }
 
-    @Override
-    public boolean evaluate(Event event) {
-        return child.stream().allMatch(it->evaluate(event));
-    }
 }

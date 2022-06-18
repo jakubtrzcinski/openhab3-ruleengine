@@ -1,11 +1,23 @@
-# Openhab3 Ruleengine for java
+# OH3RuleEngine for java
+
+OH3RuleEngine is an  pure JVM alternative to Openhab rules-dsl.
 
 
-This library allows you to write your home automation rules in java
+##  Why OH3RuleEngine rather than rule-dsl provided by openhab?
 
+For most of the users rule-dsl would be enough, for more advanced users rule-dsl has some limits which does not exists when using OH3RuleEngine
+
+Those limitations are:
+* Pure IDE support for hand writing *.rules files
+* No support for classes objects
+* Limited code reuse
+
+## Requirements
+* Java 11
 
 ## Installation
 
+TBD
 
 ## Getting started
 
@@ -24,77 +36,124 @@ List.of(
 ).start().join();
 ```
 
-## Examples
+## How to write rules
 
-
-### Cron based conditions
-
-Set `Bedroom_Light` state to `ON` at 8 AM
+OH3RuleEngine provides you two ways of creating rules
+### Classic Java object
 ```java
-class TestRule implements ModyfingRule {
+static class TestRule extends Rule {
 
-    @Setter
-    private OpenhabClient openhabClient;
-    
+    @Override
+    public String name(){
+        return "Test";
+    }
     @Override
     public Condition when() {
-        return cron("0 0 8 * * *");
+        return onStartup();
     }
 
     @Override
     public void run() {
-        openhabClient.item().setState("Bedroom_Light", "ON");
+        System.out.println("Foobar");
     }
-
 }
 ```
 
-### Event based conditions
-
-Print log when light in office is turned off
+### Builder
 ```java
-@Slf4j
-class TestRule implements Rule {
+rule("Test")
+.when(onStartup())
+.then(() -> {
+    System.out.println("Foobar");
+})
+```
+*This approach is not recommended as it can lead to mess in the code.*
+
+
+## Rule Examples
+
+### Terratium temperature controller
+
+```java
+public class TerrariumTemperatureRule extends Rule {
+
+    private final String currentTempItem;
+
+    private final String targetTempItem;
+
+    private final String heatingItem;
+
+    public TerrariumTemperatureRule(String terrariumId) {
+        this.currentTempItem = terrariumId+"_Actual_Temperature";
+        this.targetTempItem = terrariumId+"_Target_Temperature";
+        this.heatingItem = terrariumId+"_Heating";
+    }
 
     @Override
     public Condition when() {
-        return itemChangedTo("Office_Light", "OFF");
+        return or(
+                itemChanged(currentTempItem),
+                itemChanged(targetTempItem),
+                onStartup()
+        );
     }
 
-    @SneakyThrows
     @Override
     public void run() {
-        log.warn("Office light has ben turned off");
+        if(getNumber(currentTempItem) > getNumber(targetTempItem)){
+            setState(heatingItem, OFF);
+        } else {
+            setState(heatingItem, ON);
+        }
     }
 }
+
 ```
 
+## Condition Examples
 
-### Or/And condions
-
+### Item changed 
 ```java
-@Slf4j
-class TestRule implements Rule {
+itemChanged("FOO");
+```
+### Item changed to value
+```java
+itemChangedTo("FOO", "12");
+        
+itemChanged("FOO").to("12");
+```
+### Item changed to value of other item
+```java
+itemChangedTo("FOO", item("BAR"));
+        
+itemChanged("FOO").to(item("BAR"));
+```
+### Or/anyOf
+```java
+anyOf(itemChanged("FOO"), itemChanged("BAR"));
 
-    @Override
-    public Condition when() {
-        return itemChangedTo("Office_Light", "OFF")
-                .or(itemChangedTo("Bedroom_Light", "OFF"))
-    }
+or(itemChanged("FOO"), itemChanged("BAR"));
 
-    @SneakyThrows
-    @Override
-    public void run() {
-        log.warn("Office light has ben turned off");
-    }
-}
+itemChanged("FOO").or(itemChanged("BAR"));
 ```
 
-##Supported conditions
+### And/allOf
+```java
+allOf(itemChanged("FOO"), itemChanged("BAR"));
 
-* Or
-* And
-* ItemStateIs
-* ItemStateChanged
-* ItemStateChangedTo
-* Cron
+and(itemChanged("FOO"), itemChanged("BAR"));
+
+itemChanged("FOO").and(itemChanged("BAR"));
+```
+
+### Cron
+```java
+cron("* * * * * *"); // execute every second
+cron("0 * * * * *"); // execute every minute
+```
+
+## Roadmap
+
+* Define items via code
+* Define things via code
+* Code to sitemap compilator

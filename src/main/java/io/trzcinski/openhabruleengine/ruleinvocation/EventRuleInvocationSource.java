@@ -2,6 +2,9 @@ package io.trzcinski.openhabruleengine.ruleinvocation;
 
 import io.trzcinski.openhabclient.OpenhabClient;
 import io.trzcinski.openhabclient.dto.Event;
+import io.trzcinski.openhabruleengine.condition.evaluator.ConditionEvaluator;
+import io.trzcinski.openhabruleengine.condition.evaluator.RootConditionEvaluator;
+import io.trzcinski.openhabruleengine.item.ItemStateFacadeImpl;
 import io.trzcinski.openhabruleengine.rule.Rule;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,20 +27,33 @@ public class EventRuleInvocationSource implements RuleInvocationSource {
 
     private final Collection<Rule> rules;
 
+    private final ConditionEvaluator conditionEvaluator;
+
+    public EventRuleInvocationSource(OpenhabClient client, Collection<Rule> rules) {
+        this.client = client;
+        this.rules = rules;
+        this.conditionEvaluator = new RootConditionEvaluator(new ItemStateFacadeImpl(client));
+    }
+
     @Override
-    public Thread listen(Consumer<Rule> toRun) {
+    public Thread listen() {
         var eventClient = client.event();
 
-        eventClient.all().subscribe(it->{
-            matchedRules(it).forEach(toRun);
-        });
-        return eventClient.getListener();
+        matchedRules(new Event("internal/startup", null, null)).forEach(Rule::run);
+
+        eventClient.all().subscribe(it-> matchedRules(it).forEach(Rule::run));
+
+        var thread = eventClient.getListener();
+
+        thread.setName("EventRuleInvocationSource");
+        return thread;
     }
 
     private List<Rule> matchedRules(Event event){
         var ret = new ArrayList<Rule>();
         for (Rule rule : rules) {
-            if(rule.when().evaluate(event)){
+
+            if(conditionEvaluator.evaluate(rule.when(), event)){
                 log.debug(String.format("Matched Rule %s with event %s", rule.name(), event));
                 ret.add(rule);
             }

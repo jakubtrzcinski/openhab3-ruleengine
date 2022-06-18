@@ -17,11 +17,4 @@ import static io.trzcinski.openhabclient.dto.Event.Type.ItemStateEvent;
 public class ItemStateChangedToCondition extends Condition {
     private final String itemName;
     private final Object expectedValue;
-
-    @Override
-    public boolean evaluate(Event event) {
-        return event.getTopic().contains("items/"+itemName)
-                && Objects.equals(event.getPayload().getValue(), expectedValue)
-                && event.getType() == ItemStateEvent;
-    }
 }

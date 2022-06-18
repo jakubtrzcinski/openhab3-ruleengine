@@ -1,20 +1,17 @@
 package io.trzcinski.openhabruleengine;
 
 import io.trzcinski.openhabclient.OpenhabClient;
-import io.trzcinski.openhabclient.dto.Event;
 import io.trzcinski.openhabruleengine.condition.Condition;
 import io.trzcinski.openhabruleengine.condition.ConditionAggregator;
-import io.trzcinski.openhabruleengine.condition.ReadingStateCondition;
+import io.trzcinski.openhabruleengine.item.ItemStateFacadeImpl;
 import io.trzcinski.openhabruleengine.rule.*;
 import io.trzcinski.openhabruleengine.ruleinvocation.EventRuleInvocationSource;
 import io.trzcinski.openhabruleengine.ruleinvocation.RuleInvocationSource;
-import io.trzcinski.openhabruleengine.ruleinvocation.TimeInvocationSource;
+import io.trzcinski.openhabruleengine.ruleinvocation.CronInvocationSource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * @author Jakub Trzcinski jakub@trzcinski.io
@@ -32,6 +29,8 @@ public class OpenhabRuleEngine {
 
     private final Set<RuleInvocationSource> ruleInvocationSources = new HashSet<>();
 
+    private Thread thread;
+
 
     public OpenhabRuleEngine(OpenhabClient client, Collection<Rule> rules) {
         this.client = client;
@@ -41,8 +40,6 @@ public class OpenhabRuleEngine {
     }
 
     public Thread start() {
-        var thread = new Thread(this::doStart);
-        thread.start();
         return thread;
     }
 
@@ -51,19 +48,17 @@ public class OpenhabRuleEngine {
         for (Rule rule : rules) {
             RuleValidator.validate(rule);
             log.info(String.format("Registered rule %s", rule.name()));
-            if(rule instanceof ModyfingRule){
-                ((ModyfingRule) rule).setOpenhabClient(client);
-            }
+            rule.setItemStateFacade(new ItemStateFacadeImpl(client));
+
             enrichConditions(rule.when());
         }
-        addInvocationSource(new EventRuleInvocationSource(client, rules));
-        addInvocationSource(new TimeInvocationSource(client, rules));
+        var event = new EventRuleInvocationSource(client, rules);
+        thread = event.listen();
+        addInvocationSource(event);
+        addInvocationSource(new CronInvocationSource(client, rules));
     }
 
     private void enrichConditions(Condition condition){
-        if(condition instanceof ReadingStateCondition){
-            ((ReadingStateCondition) condition).setOpenhabClient(client);
-        }
         if(condition instanceof ConditionAggregator){
             ((ConditionAggregator) condition).getChild().forEach(this::enrichConditions);
         }
@@ -75,16 +70,5 @@ public class OpenhabRuleEngine {
     }
 
 
-    private void doStart() {
-        ruleInvocationSources
-            .stream()
-            .map(it -> it.listen(ruleRunner::run))
-            .forEach(it->{
-                try {
-                    it.join();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            });
-    }
+
 }

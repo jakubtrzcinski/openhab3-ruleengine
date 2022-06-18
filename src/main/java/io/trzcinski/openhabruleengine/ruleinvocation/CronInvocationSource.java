@@ -10,14 +10,17 @@ import io.trzcinski.openhabclient.dto.Event;
 import io.trzcinski.openhabruleengine.condition.Condition;
 import io.trzcinski.openhabruleengine.condition.CronCondition;
 import io.trzcinski.openhabruleengine.condition.OrCondition;
+import io.trzcinski.openhabruleengine.condition.evaluator.ConditionEvaluator;
+import io.trzcinski.openhabruleengine.condition.evaluator.RootConditionEvaluator;
+import io.trzcinski.openhabruleengine.item.ItemStateFacadeImpl;
 import io.trzcinski.openhabruleengine.rule.Rule;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -30,7 +33,7 @@ import java.util.stream.Collectors;
  * @since 13-06-2022
  */
 @Slf4j
-public class TimeInvocationSource implements RuleInvocationSource {
+public class CronInvocationSource implements RuleInvocationSource {
 
     private final OpenhabClient client;
 
@@ -52,19 +55,30 @@ public class TimeInvocationSource implements RuleInvocationSource {
 
     private final CronParser parser = new CronParser(cronDefinition);
 
-
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
 
-    public TimeInvocationSource(OpenhabClient client, Collection<Rule> rules) {
+    private final ConditionEvaluator conditionEvaluator;
+
+    public CronInvocationSource(OpenhabClient client, Collection<Rule> rules) {
         this.client = client;
         this.rules = rules;
 
+        this.conditionEvaluator = new RootConditionEvaluator(new ItemStateFacadeImpl(client));
 
         for (Rule rule : rules) {
             var crons = findCrons(rule.when());
 
             crons.forEach(cron->{
-                executor.scheduleAtFixedRate(rule::run,0, invokeInSeconds(cron), TimeUnit.SECONDS);
+                var executeIn = invokeInSeconds(cron);
+                var now = ZonedDateTime.now();
+                var initDelay = executeIn.timeToNextExecution(now).map(Duration::getSeconds).orElse(0L);
+                var fromLast = executeIn.timeFromLastExecution(now).map(Duration::getSeconds).orElse(0L);
+                executor.scheduleAtFixedRate(
+                        rule::run,
+                        initDelay,
+                        initDelay+fromLast,
+                        TimeUnit.SECONDS
+                );
             });
         }
     }
@@ -79,36 +93,17 @@ public class TimeInvocationSource implements RuleInvocationSource {
                     .flatMap(Collection::stream)
                     .collect(Collectors.toList());
         }
-        return null;
+        return Collections.emptyList();
     }
 
 
-    private Long invokeInSeconds(String cron){
+    private ExecutionTime invokeInSeconds(String cron){
         Cron quartzCron = parser.parse(cron);
-        return ExecutionTime.forCron(quartzCron)
-                .timeToNextExecution(ZonedDateTime.now())
-                .map(Duration::getSeconds)
-                .orElse(null);
+        return ExecutionTime.forCron(quartzCron);
     }
 
     @Override
-    public Thread listen(Consumer<Rule> toRun) {
-        var eventClient = client.event();
-
-        eventClient.all().subscribe(it->{
-            matchedRules(it).forEach(toRun);
-        });
-        return eventClient.getListener();
-    }
-
-    private List<Rule> matchedRules(Event event){
-        var ret = new ArrayList<Rule>();
-        for (Rule rule : rules) {
-            if(rule.when().evaluate(event)){
-                log.debug(String.format("Matched Rule %s with event %s", rule.name(), event));
-                ret.add(rule);
-            }
-        }
-        return ret;
+    public Thread listen() {
+        return null;
     }
 }

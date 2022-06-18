@@ -10,5 +10,5 @@ import java.util.function.Supplier;
  * @since 13-06-2022
  */
 public interface RuleInvocationSource {
-    Thread listen(Consumer<Rule> toRun);
+    Thread listen();
 }

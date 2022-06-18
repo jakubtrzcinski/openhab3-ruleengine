@@ -1,10 +1,7 @@
 package io.trzcinski.openhabruleengine.condition;
 
-import io.trzcinski.openhabclient.dto.Event;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-
-import java.sql.Time;
 
 /**
  * @author Jakub Trzcinski jakub@trzcinski.io
@@ -12,8 +9,6 @@ import java.sql.Time;
  */
 @Getter
 @RequiredArgsConstructor
-public class CronCondition extends Condition {
-
-    private final String expr;
-
+public class SystemCondition extends Condition {
+    private final String eventType;
 }
